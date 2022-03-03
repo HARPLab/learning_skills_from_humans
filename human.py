@@ -4,7 +4,6 @@ from logging import handlers
 import numpy as np
 import logging
 
-# from utils.utils import feature_function
 from utils.param_function import ParamFunction
 
 logger = logging.getLogger(__name__)
@@ -106,48 +105,6 @@ class Human:
             difference_mats[i, :, :] = np.abs(q_option - self.desired_params)
         difference_mats = difference_mats.squeeze()
         return difference_mats
-
-    # @staticmethod
-    # def show_desired_pizza(desired_features: dict):
-    #    """Create ideal pizza from parameters."""
-    #    # 1.) Get the topping count and centroid:
-    #    topping_count = desired_features["object_count"]
-    #    pizza_array = np.zeros((2, topping_count))
-    #    x_centroid = 0
-    #    y_centroid = 0
-    #    if np.isin(desired_features.keys(), "x_centroid"):
-    #        x_centroid = desired_features["x_centroid"]
-    #        y_centroid = desired_features["y_centroid"]
-    #    # 2.) Now check what features remain for which
-    #    #    we must account:
-    #    for k in desired_features.keys():
-    #        if k == "x_variance":
-    #            while (
-    #                np.abs(
-    #                    pizza_array[0, :].std() ** 2
-    #                    - desired_features["x_variance"]
-    #                )
-    #                > 10e-4
-    #            ):
-    #                pizza_array[0, :] = np.random.normal(
-    #                    loc=x_centroid,
-    #                    scale=np.sqrt(desired_features["x_variance"]),
-    #                    size=(1, topping_count),
-    #                )
-    #        if k == "y_variance":
-    #            while (
-    #                np.abs(
-    #                    pizza_array[1, :].std() ** 2
-    #                    - desired_features["y_variance"]
-    #                )
-    #                > 10e-4
-    #            ):
-    #                pizza_array[1, :] = np.random.normal(
-    #                    loc=y_centroid,
-    #                    scale=np.sqrt(desired_features["y_variance"]),
-    #                    size=(1, topping_count),
-    #                )
-    #    return pizza_array
 
     def check_good_enough(pizza_features: np.ndarray) -> bool:
         """Compare this pizza to the human's desired pizza."""

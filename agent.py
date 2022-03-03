@@ -65,13 +65,7 @@ class Agent:
         query_method: str = "uniform",
         debug: bool = True,
     ):
-        """Initialize agent.
-
-        ::inputs:
-            ::query_candidate_count: How many candidate queries to generate.
-            ::query_options: The number of options per query candidate.
-
-        """
+        """Initialize agent."""
         # 1.) Define the space from which candidate queries are drawn:
         self.sample_pizza = sample_pizza
         crust_and_topping_factor = (self.sample_pizza.crust_thickness) + (
@@ -195,7 +189,6 @@ class Agent:
         # 1.) Query the human (or simulate human response) and get a
         #     visual depiction of that query:
         if get_human_input:
-            # query_options, chosen_option = self.query()
             query_options, chosen_option = self.query_generator.query(
                 particles_params,
                 particles_weights,
@@ -224,8 +217,6 @@ class Agent:
             self.confidence_coeff, humans_choice, query_params
         )
 
-        # accumulated_reward = self.compute_accumulated_reward()
-
         # 5.) Update the visual:
         resampling_count = None
 
@@ -241,7 +232,6 @@ class Agent:
         if stepwise:
             input("Press enter to continue\n")
         return (latest_belief_plot, latest_query_visual)
-        # return (latest_plot,)
 
     def choose_from_options(self, query: Tuple[object, np.ndarray]) -> int:
         """Choose the option which returns the highest reward."""
@@ -285,38 +275,3 @@ class Agent:
             -self.confidence_coeff * expected_weights.dot(features.T)
         )
         return reward
-
-    def compute_accumulated_reward(self):
-        particles_params = self.filter.get_particles_params()
-        accumulated_reward = feature_function(
-            self.ideal_pizza_params, particles_params
-        )
-        accumulated_reward = (
-            np.exp(-self.confidence_coeff * accumulated_reward)
-            * self.filter.importance_weights
-        )
-        # 5b.) If a particle reveals a model superior to what we've
-        #      found thus far, save it:
-        if np.max(accumulated_reward) > self.best_particle_reward:
-            self.best_particle_reward = np.max(accumulated_reward)
-            self.best_particle = self.filter.particle_models[
-                np.argmax(accumulated_reward)
-            ]
-            self.particle_found_at = self.query_count
-            logger.info(
-                f"The new best particle (found at query {self.query_count}) "
-                f"has params:\n{self.best_particle.get_params()} "
-                f"\nand has weights:\n{self.best_particle.get_weights()}"
-            )
-
-        # 5c.) If the accumulated reward is superior to what we've
-        #      found thus far, save it:
-        accumulated_reward = np.sum(accumulated_reward)
-        if accumulated_reward > self.highest_accumulated_reward:
-            self.highest_accumulated_reward = accumulated_reward
-            self.accumulated_reward_found_at = self.query_count
-        logger.info(
-            f"The accumulated reward after query {self.query_count} "
-            f"is: {np.sum(accumulated_reward):.3f}."
-        )
-        return accumulated_reward
