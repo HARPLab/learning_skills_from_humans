@@ -1,40 +1,11 @@
 from __future__ import annotations
 
-import logging
-from logging import handlers
 from pathlib import Path
 from typing import Tuple, Union
 
 import numpy as np
 
 from utils.utils import mean_normalize, feature_function
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-handler_1 = logging.StreamHandler()
-handler_2 = handlers.RotatingFileHandler(
-    Path(__file__).parent / Path("../logs/particle.log")
-)
-
-formatted_output = "{asctime}|{name}|{levelname}|{message}"
-formatter_1 = logging.Formatter(formatted_output, style="{")
-
-handler_1.setLevel(logging.WARNING)
-handler_2.setLevel(logging.DEBUG)
-handler_1.setFormatter(formatter_1)
-handler_2.setFormatter(formatter_1)
-
-logger.addHandler(handler_1)
-logger.addHandler(handler_2)
-
-"""
-At the place of logging:
-    logger.<message type>("Something happened here.")
-
-    e.g.
-
-    logger.debug("Something happened here.")
-"""
 
 
 class Particle:

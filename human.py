@@ -1,12 +1,8 @@
 from typing import Tuple
-from logging import handlers
 
 import numpy as np
-import logging
 
 from utils.param_function import ParamFunction
-
-logger = logging.getLogger(__name__)
 
 
 class Human:
@@ -59,7 +55,6 @@ class Human:
         )
         # 4.) Exponentiate the negation of the results:
         relative_preference = np.exp(-self.coeff * weighted_features_compared)
-        logger.info(f"Human's relative preference:\n{relative_preference}.")
         # 5.) Choose the option which maximizes human's reward:
         choice = np.argmax(relative_preference)
         # 6.) See if the option is above or below some standard

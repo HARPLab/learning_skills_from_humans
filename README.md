@@ -1,4 +1,4 @@
-# Actively Learning to Prepare a Human's Preferred Meal Configuration
+# Actively Learning to Prepare a Meal from Human Feedback
 
 Maintainer: Pat Callaghan\
 Last updated: March 3rd, 2022

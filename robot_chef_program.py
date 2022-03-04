@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-import logging
 import time
-from logging import handlers
 from pathlib import Path
 
 import matplotlib.animation as animate
@@ -22,27 +20,9 @@ from utils.utils import (
 )
 from utils.visualizer import Visualizer
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-formatted_output = "{asctime}|{name}|{levelname}|{message}"
-formatter_1 = logging.Formatter(formatted_output, style="{")
-
-handler_1 = logging.StreamHandler()
-handler_1.setLevel(logging.INFO)
-handler_1.setFormatter(formatter_1)
-
-handler_2 = handlers.RotatingFileHandler(
-    Path(__file__).parent / Path("logs/robot_pizza_chef.log")
-)
-handler_2.setLevel(logging.DEBUG)
-handler_2.setFormatter(formatter_1)
-
-logger.addHandler(handler_1)
-logger.addHandler(handler_2)
-
-paused = False
 output_path = Path.cwd() / Path("data/")
+if not output_path.exists():
+    output_path.mkdir(parents=True)
 
 
 def main() -> None:
@@ -107,12 +87,6 @@ def main() -> None:
         user_inputs.confidence,
     )
 
-    logger.info(
-        "The human's desired params are:\n "
-        f"{human.get_params()}\nand her "
-        f"importance weights are:\n{human.get_weights()}"
-    )
-
     # 3.) Create a pause-when-clicked event:
     def toggle_pause(*args, **kwargs):
         global paused
@@ -174,6 +148,9 @@ def main() -> None:
     df = pd.DataFrame(d)
     t = time.localtime()
     t = time.strftime("%Y:%m:%d:%H:%M:%S", t)
+    data_path = output_path / Path("expected_values")
+    if not data_path.exists():
+        data_path.mkdir(parents=True)
     df.to_csv(
         output_path
         / f"expected_values/{t}_{params_array.shape[0]}_params_{user_inputs.query_count}_queries.csv"
@@ -182,6 +159,10 @@ def main() -> None:
     query_choices["Human"] = robot.humans_choices
     query_choices["Agent"] = robot.agents_choices
     df = pd.DataFrame(query_choices)
+
+    data_path = output_path / Path("choice_comparisons")
+    if not data_path.exists():
+        data_path.mkdir(parents=True)
 
     df.to_csv(
         output_path

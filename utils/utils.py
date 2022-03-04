@@ -1,28 +1,8 @@
-import logging
-from logging import handlers
 from pathlib import Path
 from typing import Tuple, Union
 
 import matplotlib.animation as animate
 import numpy as np
-
-logger = logging.getLogger(__name__)
-handler_1 = logging.StreamHandler()
-handler_2 = handlers.RotatingFileHandler(
-    Path(__file__).parent / Path("../logs/utils.log")
-)
-
-formatted_output = "{asctime}|{name}|{levelname}|{message}"
-formatter_1 = logging.Formatter(formatted_output, style="{")
-
-handler_1.setLevel(logging.DEBUG)
-handler_2.setLevel(logging.INFO)
-handler_1.setFormatter(formatter_1)
-handler_2.setFormatter(formatter_1)
-
-logger.setLevel(logging.DEBUG)
-logger.addHandler(handler_1)
-logger.addHandler(handler_2)
 
 
 def KL_D(P: np.ndarray, Q: np.ndarray) -> np.ndarray:
@@ -178,8 +158,6 @@ def mean_normalize(data: np.ndarray) -> Tuple[np.ndarray, float, float]:
     """Normalize the data to a common scale."""
     mean = np.mean(data)
     std_dev = np.nanstd(data)
-    if np.isclose(std_dev, 0):
-        logger.info(f"The std_dev within mean_normalize is: {std_dev:.3f}.")
 
     normed_data = (data - mean) / std_dev
     return normed_data, mean, std_dev
