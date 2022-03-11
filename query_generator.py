@@ -33,8 +33,6 @@ class QueryGenerator:
                                a param-function.
 
         ::attributes:
-            ::self.importance_density: A 2-D column vector which represents
-                                       the approximating distribution.
 
             ::self.posterior_belief: The distribution representing the latest
                                      belief over a human's preferred model.
@@ -93,8 +91,7 @@ class QueryGenerator:
             #     params and the params within each model. Then
             #     weight the results by each model's weights:
             weighted_features = feature_function(
-                query_option_params,
-                all_particle_params,
+                query_option_params, all_particle_params
             )
             option_likelihoods = bl(self.confidence_coeff, weighted_features)
             expected_KL_divergence = expected_KL_D(

@@ -9,10 +9,13 @@ class BootstrapFilter:
     """A generic particle filter."""
 
     def __init__(
-        self, particles: np.ndarray, params_noise: float, weights_noise: float
+        self,
+        particles: np.ndarray,
+        params_noise: float,
+        weights_noise: float,
+        resampling_threshold: float,
     ):
         """Instantiate a BoostrapFilter."""
-        # 1.) Basic attributes:
         self.particle_models = particles
         self.particle_count = particles.shape[0]
         self.importance_weights = np.full(
@@ -29,10 +32,10 @@ class BootstrapFilter:
             (1, self.particle_models[0].param_count)
         )
         self.particle_param_count = self.particle_models[0].param_count
-        # 4.) Instantiate data-tracking attributes:
         self.update_count = 0
-        self.m_most_probable = int(self.particle_count)  # / 5.0)
+        self.m_most_probable = int(self.particle_count)
         self.expectation_every_n = 5
+        self.resampling_threshold = resampling_threshold
 
     def update_belief(
         self,
@@ -52,8 +55,8 @@ class BootstrapFilter:
         # 1.) Do some preprocessing:
         models_params = self.get_particles_params()
 
-        # 2.) Separate each option's param values
-        #      and stack them for efficient computation:
+        # 2.) Separate each option's param values; stack them for
+        #     efficient computation:
         weighted_param_diffs = feature_function(
             input_param_values, models_params
         )
@@ -82,16 +85,6 @@ class BootstrapFilter:
         self.expected_weights = np.vstack(
             (self.expected_weights, expected_weights)
         )
-        if (
-            self.update_count > self.expectation_every_n
-            and self.update_count % self.expectation_every_n == 0
-        ):
-            expected_params = self.expected_params_last_n(
-                self.expectation_every_n
-            )
-            expected_weights = self.expected_weights_last_n(
-                self.expectation_every_n
-            )
         self.update_count += 1
 
     def systematic_resample(self, with_noise: bool = True) -> np.ndarray:
@@ -155,8 +148,7 @@ class BootstrapFilter:
         # 2.) Delete old particles:
         del self.particle_models
 
-        # 3.) Set new particles-as-models and add
-        #     some noise:
+        # 3.) Set new particles-as-models and add some noise:
         self.particle_models = resampled_particle_set
         self.add_normed_noise()
         # 4.) Reset the weights with uniform value:
@@ -240,6 +232,13 @@ class BootstrapFilter:
             particles_weights = particles_weights.reshape(-1, 1)
 
         return particles_weights
+
+    def check_degeneracy(self, query_ct: int) -> None:
+        """If weights have degenerated too much, resample."""
+        n_eff = 1 / (np.sum(self.importance_weights ** 2))
+        if n_eff < self.resampling_threshold * self.particle_count:
+            print(f"Resampling after query {query_ct}.")
+            self.systematic_resample()
 
     def add_normed_noise(self) -> None:
         """Mean-normalize the params before adding noise.

@@ -32,11 +32,15 @@ class Agent:
         axes_count: int,
         seed: int,
         preference_type: str = "complete",
-        importance_density: str = "uniform",
         query_method: str = "uniform",
-        debug: bool = True,
     ):
-        """Initialize agent."""
+        """Initialize agent.
+
+        ::inputs:
+            ::query_candidate_count: How many candidate queries to generate.
+            ::query_options: The number of options per query candidate.
+
+        """
         # 1.) Define the space from which candidate queries are drawn:
         self.sample_pizza = sample_pizza
         crust_and_topping_factor = (self.sample_pizza.crust_thickness) + (
@@ -53,14 +57,11 @@ class Agent:
         self.option_feature_max = option_feature_max
         self.query_candidate_count = query_candidate_count
         self.confidence_coeff = confidence_coefficient
-        self.resampling_threshold = resampling_threshold
         self.querying_method = query_method
-        self.importance_density_type = importance_density
         self.rng = np.random.default_rng(seed)
 
-        # 1.) Instantiate the filter's particles-as-models.
-        #     NOTE the agent's posterior belief is maintained
-        #     within this BootstrapFilter object:
+        # 1.) Instantiate the filter's particles-as-models. NOTE the agent's
+        #     posterior belief is maintained within BootstrapFilter:
         try:
             assert sample_pizza is not None
 
@@ -85,23 +86,12 @@ class Agent:
             elapsed = stop - start
             print(f"It took {elapsed:.4f}s to generate particles.")
 
-            # To test if the model updates as expected:
-            # 1.) un-stub the proceeding block
-            # 2.) Stub the resampling procedure at the end of this
-            #     file
-
-            # ideal_particle = Particle(
-            #    id_tag=particle_set.shape[0] - 1,
-            #    param_vals=np.array([[0.55, 2.54]]),
-            #    weight_vals=np.array([[0.4, 0.6]]),
-            # )
-            # particle_set[-1] = ideal_particle
-
             start = time.perf_counter()
             self.filter = BootstrapFilter(
                 particle_set,
                 params_noise=param_noise_level,
                 weights_noise=weight_noise_level,
+                resampling_threshold=resampling_threshold,
             )
             stop = time.perf_counter()
             elapsed = stop - start
@@ -146,19 +136,12 @@ class Agent:
         self.humans_choices = np.array([])
         self.agents_choices = np.array([])
 
-    def get_human_feedback(
-        self,
-        i: int,
-        get_human_input: bool,
-        human_object: Human,
-        stepwise: bool,
-    ):
+    def get_human_feedback(self, get_human_input: bool, human_object: Human):
         """Run the loop to acquire human feedback."""
         self.query_count += 1
         particles_params = self.filter.get_particles_params()
         particles_weights = self.filter.get_particles_weights()
-        # 1.) Query the human (or simulate human response) and get a
-        #     visual depiction of that query:
+        # 1.) Query the human (or simulate human response):
         if get_human_input:
             query_options, chosen_option = self.query_generator.query(
                 particles_params,
@@ -167,15 +150,18 @@ class Agent:
                 self.param_function,
             )
         else:
-            # query_options = self.query()
             query_options = self.query_generator.query(
                 particles_params,
                 particles_weights,
                 self.filter.importance_weights,
                 self.param_function,
             )
-            agents_choice = self.choose_from_options(query_options)
-            humans_choice = human_object.choose_from_options(query_options)
+            agents_choice, agents_rewards = self.choose_from_options(
+                query_options
+            )
+            humans_choice, humans_rewards = human_object.choose_option(
+                query_options
+            )
             self.agents_choices = np.append(self.agents_choices, agents_choice)
             self.humans_choices = np.append(self.humans_choices, humans_choice)
 
@@ -183,38 +169,31 @@ class Agent:
         query_params = np.array(
             list(map(self.param_function.compute_params, query_options))
         )
-        # 4.) Update robot's belief of human's reward function:
         self.filter.update_belief(
             self.confidence_coeff, humans_choice, query_params
         )
 
-        # 5.) Update the visual:
-        resampling_count = None
+        self.filter.check_degeneracy(self.query_count)
 
-        latest_belief_plot = None
-        latest_query_visual = None
-        # 6.) Check if we have enough particles with sufficient
-        #     probabilities. If the answer is 'no', resample:
-        n_eff = 1 / (np.sum(self.filter.importance_weights**2))
-        if n_eff < self.resampling_threshold * self.filter.particle_count:
-            print(f"Resampling after query {self.query_count}.")
-            resampling_count = self.filter.systematic_resample()
-
-        if stepwise:
-            input("Press enter to continue\n")
-        return (latest_belief_plot, latest_query_visual)
-
-    def choose_from_options(self, query: Tuple[object, np.ndarray]) -> int:
+    def choose_from_options(
+        self,
+        query: Tuple[object, np.ndarray],
+        expected_weights: np.ndarray = None,
+        expected_parameters: np.ndarray = None,
+    ) -> Tuple[int, np.ndarray]:
         """Choose the option which returns the highest reward."""
         q_to_eval = np.array(query, copy=True)
-        # if type(q_to_eval[0]) != np.ndarray:
-        #    q_to_eval = np.array([p.toppings for p in q_to_eval]).squeeze()
-        q_params = np.array(
-            list(map(self.param_function.compute_params, q_to_eval))
+        if type(q_to_eval[0]) == Pizza:
+            q_params = np.array(
+                list(map(self.param_function.compute_params, q_to_eval))
+            )
+        else:
+            q_params = q_to_eval
+        rewards = self.compute_reward(
+            q_params, expected_weights, expected_parameters
         )
-        rewards = self.compute_reward(q_params)
         choice = np.argmax(rewards)
-        return choice
+        return choice, rewards
 
     def compute_reward(
         self,
@@ -242,7 +221,12 @@ class Agent:
         ).squeeze()
 
         # 2.) Now compute the reward:
+        if len(features.shape) == 1:
+            features = features.reshape(1, -1)
         reward = np.exp(
             -self.confidence_coeff * expected_weights.dot(features.T)
         )
-        return reward
+        if len(reward.shape) > 2:
+            return reward.squeeze()
+        else:
+            return reward

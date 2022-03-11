@@ -1,9 +1,11 @@
+#!/usr/bin/env python3
 import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import plotly.express as px
 
 
 def parse_input():
@@ -68,16 +70,15 @@ def plot_choice_comparisons(data: np.ndarray) -> None:
     humans_choices = data[:, 0]
     agents_choices = data[:, 1]
     fig, axs = plt.subplots()
-    check = np.argwhere(humans_choices == agents_choices)
-    # consecutive_matches = np.array([])
-    # for i in range(check.shape[0]):
-    #    if check[i] == 1:
+    check = np.where(humans_choices == agents_choices, 1, 0)
+    matches_cumulative_sum = np.cumsum(check)
 
-    # axs.plot(np.arange(data.shape[0]), check, "-g")
-    axs.vlines(check, 1)
+    axs.plot(np.arange(check.shape[0]), matches_cumulative_sum, "-g")
     axs.title.set_text("Comparing oracle's choice against agent's choice.")
-    axs.set_xlabel("Time")
-    axs.set_ylabel("Chose the same option (boolean)")
+    axs.set_xlabel("Iteration")
+    axs.set_ylabel("Cumulative sum of matching query choices")
+    axs.set_xlim(0, check.shape[0])
+    axs.set_ylim(0, check.shape[0])
     plt.show()
 
 

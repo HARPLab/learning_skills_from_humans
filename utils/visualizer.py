@@ -57,7 +57,6 @@ class Visualizer:
         self.axs["belief"].set_ylim(0, diam)
         self.axs["belief"].set_xticks(coords[:, 0])
         self.axs["belief"].set_yticks(coords[:, 1])
-        # self.axs["belief"].set_xlabel("After query {self.count}")
 
         # 1.) Create a base pizza and add to axes:
         dough = plt.Circle(

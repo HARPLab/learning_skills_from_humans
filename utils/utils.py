@@ -1,8 +1,12 @@
+import logging
+import time
+from logging import handlers
 from pathlib import Path
 from typing import Tuple, Union
 
 import matplotlib.animation as animate
 import numpy as np
+from pizza import Pizza
 
 
 def KL_D(P: np.ndarray, Q: np.ndarray) -> np.ndarray:
@@ -76,9 +80,9 @@ def boltzmann_likelihood(
                             numpy array.
     """
     # 1.) Ensure the values are non-negative:
-    assert np.all(numerator_array >= 0), logger.critical(
-        "Not all values in the numerator array are non-negative."
-    )
+    # assert np.all(numerator_array >= 0), logger.critical(
+    #    "Not all values in the numerator array are non-negative."
+    # )
     # 2.) Account for the coefficient of stochasticity and the
     #     exponential operation:
     exponential_numerator_array = np.exp(
@@ -195,169 +199,188 @@ def rescale(data: np.ndarray, mean: float, std_dev: float) -> np.ndarray:
 
 
 def generate_hypothesized_pizza(
-    pizza_form: dict, desired_params: dict
+    pizza_form: dict,
+    desired_param_dict: dict,
+    param_function: callable,
+    error_threshold: float,
 ) -> np.ndarray:
-    """Sequentially build a pizza w.r.t. feature-parameters.
+    """Generate a pizza from learned desired_params."""
+    viable = False
+    goal_value = None
+    goal_index = None
+    try:
+        goal_value = desired_param_dict["coverage"]
+        goal_index = np.argwhere(param_function.basis_fns == "coverage")[0, 0]
+    except KeyError:
+        goal_value = desired_param_dict["object_count"]
+        goal_index = np.argwhere(param_function.basis_fns == "object_count")[
+            0, 0
+        ]
+
+    desired_param_values = list(desired_param_dict.values())
+    while not viable:
+        start = time.perf_counter()
+        _, hypothesized_params, hypothesized_pizza = stepwise_pizza_generator(
+            goal_value,
+            goal_index,
+            pizza_form,
+            desired_param_dict,
+            desired_param_values,
+            param_function,
+        )
+        viable = check_if_viable(
+            goal_index,
+            hypothesized_pizza,
+            desired_param_values,
+            hypothesized_params,
+            param_function,
+            error_threshold,
+        )
+        elapsed = time.perf_counter() - start
+        if elapsed > 180:
+            print(f"Stopping generation after {elapsed:.3f} seconds.")
+            return None
+
+    return hypothesized_pizza
+
+
+def stepwise_pizza_generator(
+    sufficiency_value: float,
+    sufficiency_value_index: int,
+    pizza_attributes: dict,
+    desired_parameter_dict: dict,
+    desired_parameter_values: np.ndarray,
+    parameter_function: callable,
+) -> Pizza:
+    """Sequentially build a pizza w.r.t. desired_parameters.
 
     ::inputs:
-        ::pizza_form: The higher-level pizza attributes.
-        ::desired_params: The learned feature-parameters.
+        ::sufficiency_value: Defines when this pizza is 'finished.'
+        ::sufficiency_value_index: To ensure we index appropriate parameters.
+        ::pizza_attributes: The high-level pizza description.
+        ::desired_parameters: The learned feature-parameters.
     """
-    # 1.) Get the topping count:
-    covered = 0
-    c = pizza_form["crust_thickness"]
-    t_s = pizza_form["topping_size"]
-    d = pizza_form["diameter"]
-    viable_surface_radius = (d / 2.0) - (c + (t_s / 2.0))
-    topping_count = 0
-    if np.any(np.isin(list(desired_params.keys()), "coverage")):
-        while covered < desired_params["coverage"]:
-            topping_count += 1
-            covered = (
-                topping_count
-                * np.pi
-                * (t_s / 2.0) ** 2
-                / (np.pi * viable_surface_radius**2)
-            )
-    elif np.any(np.isin(list(desired_params.keys()), "object_count")):
-        topping_count = desired_params["object_count"]
-    pizza_array = np.zeros((2, topping_count))
-    # 2.) Get centroid:
-    x_centroid = 0
-    y_centroid = 0
-    if np.any(np.isin(list(desired_params.keys()), "x_centroid")):
-        x_centroid = desired_params["x_centroid"]
-        y_centroid = desired_params["y_centroid"]
-    # 3.) Generate topping positions:
-    if np.any(np.isin(list(desired_params.keys()), "average_vector_change")):
-        # 3b.) Follow the trajectory implied by the approximated
-        #      average vector change. First, randomly place the
-        #      first topping:
-        pizza_array[0, 0] = np.random.normal(
-            loc=x_centroid,
-            scale=np.sqrt(desired_params["x_variance"]),
-            size=(1, 1),
-        )
-        pizza_array[1, 0] = np.random.normal(
-            loc=y_centroid,
-            scale=np.sqrt(desired_params["y_variance"]),
-            size=(1, 1),
-        )
-        t_ct = 1
-        while t_ct < topping_count:
-            # 3c.) Then, until we've placed as many toppings that abide
-            #     by surface_coverage, translate each subsequent topping
-            #     along x until the magnitude between it and the last
-            #     topping is of the desired value, and then rotate the
-            #     second topping until the angle between it and the last
-            #     topping is of the desired value:
-            new_y = 0
-            new_x = (
-                desired_params["average_vector_change"][1]
-                - pizza_array[0, t_ct - 1]
-            )
-            pizza_array[:, t_ct] = rotate(
-                np.array([[new_x, new_y]]),
-                desired_params["average_vector_change"][0],
-            )
+    c = pizza_attributes["crust_thickness"]
+    topping_size = pizza_attributes["topping_size"]
+    topping_area = (topping_size / 2.0) ** 2  # * np.pi
+    d = pizza_attributes["diameter"]
+    viable_surface_radius = (d / 2.0) - (c + (topping_size / 2.0))
+    viable_surface_area = viable_surface_radius ** 2  # * np.pi
 
-    elif np.any(np.isin(list(desired_params.keys()), "x_variance")):
-        pizza_array[0, :] = np.random.normal(
-            loc=x_centroid,
-            scale=np.sqrt(desired_params["x_variance"]),
-            size=(1, topping_count),
-        )
-        pizza_array[1, :] = np.random.normal(
-            loc=y_centroid,
-            scale=np.sqrt(desired_params["y_variance"]),
-            size=(1, topping_count),
-        )
-    elif np.any(np.isin(list(desired_params.keys()), "max_dist_from_origin")):
-        object_space = np.linspace(
-            -desired_params["max_dist_from_origin"],
-            desired_params["max_dist_from_origin"],
-            20000,
-        )
-        pizza_array = np.random.choice(object_space, size=(2, topping_count))
-    elif np.any(np.isin(list(desired_params.keys()), "avg_distance")):
-        object_space = np.linspace(
-            -viable_surface_radius, viable_surface_radius, 20000
-        )
-        pizza_array = np.random.choice(object_space, size=(2, topping_count))
-        while (
-            avg_distance(pizza_array) - desired_params["avg_distance"] > 10e-4
-        ):
-            pizza_array = np.random.choice(
-                object_space, size=(2, topping_count)
-            )
-    else:
-        object_space = np.linspace(
-            -viable_surface_radius, viable_surface_radius, 20000
-        )
-        pizza_array = np.random.choice(object_space, size=(2, topping_count))
+    pizza_array = np.random.uniform(
+        low=-viable_surface_radius, high=viable_surface_radius, size=(2, 1)
+    )
+    proposed_pizza = None
+    proposed_pizzas_params = None
+    current_value = 0
+    # TODO Change 'coverage' to incorporate object count:
+    coverage_error = np.abs(current_value - sufficiency_value)
+    coverage_error_threshold = topping_area / (2 * viable_surface_area)
 
-    # 4.) Now check what params remain for which we must account:
-    for k in desired_params.keys():
-        if k == "max_dist_from_origin":
-            # If there are no toppings, break:
-            if topping_count == 0:
-                continue
-            else:
-                # Pull the furthest point from the surface-origin (0,0)
-                # closer to it until all toppings are within the maximum
-                # distance allowed:
-                while (
-                    np.nanmax(np.linalg.norm(pizza_array, axis=0))
-                    > desired_params["max_dist_from_origin"]
-                ):
-                    pizza_array = np.random.choice(
-                        object_space, size=(2, topping_count)
-                    )
-                    # argmax_dist = np.nanargmax(
-                    #    np.linalg.norm(pizza_array, axis=0)
-                    # )
-                    # x_sign = np.sign(pizza_array[0, argmax_dist])
-                    # y_sign = np.sign(pizza_array[1, argmax_dist])
-                    # pizza_array[0, argmax_dist] = (
-                    #    pizza_array[0, argmax_dist] - x_sign * 0.1
-                    # )
-                    # pizza_array[1, argmax_dist] = (
-                    #    pizza_array[1, argmax_dist] - y_sign * 0.1
-                    # )
-        if k == "x_variance":
-            # If variance is too high, pull the objects toward the centroid,
-            # but do so in a manner proportional to how distal each point is
-            # from the centroid:
-            while (
-                np.abs(
-                    pizza_array[0, :].std() ** 2 - desired_params["x_variance"]
-                )
-                > 10e-4
+    start = time.perf_counter()
+    while coverage_error > coverage_error_threshold:
+        # print(f"The latest coverage error is: {coverage_error:.4f}")
+
+        viable_placement = False
+        while not viable_placement:
+            proposed_next_topping = np.random.uniform(
+                low=-viable_surface_radius,
+                high=viable_surface_radius,
+                size=(2, 1),
+            )
+            proposed_pizza_array = np.append(
+                pizza_array, proposed_next_topping, axis=1
+            )
+            # TODO fix compute_params so we don't have to create this pizza:
+            proposed_pizza = Pizza.from_dict(
+                pizza_attributes, proposed_pizza_array
+            )
+            proposed_pizzas_params = parameter_function.compute_params(
+                proposed_pizza
+            ).reshape(1, -1)
+            acceptable_param_count = 0
+            # Check the parameters we computed:
+            for i in range(parameter_function.basis_fns.shape[0]):
+                if i == sufficiency_value_index:
+                    continue
+                if parameter_function.optimize_as[i] == "equal":
+                    if ~np.isclose(
+                        proposed_pizzas_params[0, i],
+                        desired_parameter_values[i],
+                    ):
+                        del proposed_pizza_array
+                        break
+                elif parameter_function.optimize_as[i] == "max":
+                    if (
+                        proposed_pizzas_params[0, i]
+                        > desired_parameter_values[i]
+                    ):
+                        del proposed_pizza_array
+                        break
+                elif parameter_function.optimize_as[i] == "min":
+                    if (
+                        proposed_pizzas_params[0, i]
+                        < desired_parameter_values[i]
+                    ):
+                        del proposed_pizza_array
+                        break
+                acceptable_param_count += 1
+            # Did all params pass or did we break early?:
+            if acceptable_param_count == proposed_pizzas_params.shape[1] - 1:
+                pizza_array = proposed_pizza_array
+                viable_placement = True
+                current_value = proposed_pizzas_params[
+                    0, sufficiency_value_index
+                ]
+            coverage_error = np.abs(current_value - sufficiency_value)
+            elapsed = time.perf_counter() - start
+            if elapsed > 180:
+                print(f"Stopping generation after {elapsed:.3f} seconds.")
+                return None
+        # print(f"Placed another topping after {elapsed:.4f} seconds.")
+        # print(f"The latest coverage is {current_value:.4f}")
+        pizza_array = proposed_pizza_array
+
+    return pizza_array, proposed_pizzas_params, proposed_pizza
+
+
+def check_if_viable(
+    target_value_index: int,
+    proposed_object: object,
+    desired_param_values: np.ndarray,
+    proposed_params: np.ndarray,
+    parameter_function: callable,
+    error_threshold: float,
+) -> bool:
+    """Check if tested_object's parameters satisfy error_threshold."""
+    residuals = np.abs(proposed_params - desired_param_values)
+    error_ratios = residuals / desired_param_values
+    # print(
+    #    f"The residuals were:\n{residuals}.\nThe corresponding error "
+    #    f"ratios were:\n{error_ratios}."
+    # )
+    for i in range(parameter_function.basis_fns.shape[0]):
+        if i == target_value_index:
+            continue
+        if parameter_function.optimize_as[i] == "equal":
+            if error_ratios[0, i] > error_threshold:
+                return False
+        elif parameter_function.optimize_as[i] == "max":
+            if (
+                proposed_params[0, i] > desired_param_values[i]
+                or error_ratios[0, i] > error_threshold
             ):
-                pizza_array[0, :] = np.where(
-                    pizza_array[0, :] < x_centroid,
-                    pizza_array[0, :] + 0.01 * pizza_array[0, :],
-                    pizza_array[0, :] - 0.01 * pizza_array[0, :],
-                )
-        if k == "y_variance":
-            # If variance is too high, pull the objects toward the centroid,
-            # but do so in a manner proportional to how distal each point is
-            # from the centroid:
-            while (
-                np.abs(
-                    pizza_array[1, :].std() ** 2 - desired_params["y_variance"]
-                )
-                > 10e-4
+                return False
+        elif parameter_function.optimize_as[i] == "min":
+            if (
+                proposed_params[0, i] < desired_param_values[i]
+                or error_ratios[0, i] > error_threshold
             ):
-                pizza_array[1, :] = np.where(
-                    pizza_array[1, :] < y_centroid,
-                    pizza_array[1, :] + 0.01 * pizza_array[1, :],
-                    pizza_array[1, :] - 0.01 * pizza_array[1, :],
-                )
-    return pizza_array
+                return False
+    return True
 
 
-def rotate(vector: np.ndarray, rads: np.float) -> np.ndarray:
+def rotate(vector: np.ndarray, rads: float) -> np.ndarray:
     """Rotate a vector by (+/-)radians amount."""
     rotated_x = np.cos(vector[0]) - np.sin(vector[1])
     rotated_y = np.sin(vector[0]) + np.cos(vector[1])
@@ -373,6 +396,15 @@ def cosine_sim(truth: np.ndarray, approx: np.ndarray) -> float:
         return 0
 
     return numerator / denom
+
+
+def new_find_best_result(
+    learned_weights: np.ndarray,
+    learned_params: np.ndarray,
+    ideal_params: np.ndarray,
+) -> int:
+    """Find the learned model which returns the greatest reward."""
+    pass
 
 
 def find_best_result(
@@ -414,49 +446,3 @@ def arrange_params_and_weights(
         weights_array = np.append(weights_array, feature_weights[k])
 
     return params_array, weights_array
-
-
-# def feature_function(
-#    query_param_values: np.ndarray,
-#    model_params: np.ndarray,
-#    model_weights: np.ndarray,
-# ) -> np.ndarray:
-#    """Compute the features from sets of parameters."""
-#    feature_mats = np.zeros(
-#        (
-#            query_param_values.shape[0],
-#            model_params.shape[0],
-#            query_param_values.shape[1],
-#        )
-#    )
-#    # 1.) Separate and stack each option's params for efficient computation:
-#    for i in range(query_param_values.shape[0]):
-#        q_option = np.repeat(
-#            np.reshape(query_param_values[i, :], (1, -1)),
-#            model_params.shape[0],
-#            axis=0,
-#        )
-#        # 1a.) Compute the element-wise magnitudes between each option in
-#        #      a query and each possible reward function model:
-#        feature_mats[i, :, :] = np.abs(model_params - q_option)
-#
-#        # 1b.) Incorporate the weights via element-wise multiplication. Note
-#        #      that including the weights before normalizing is mathematically
-#        #      the same as including them after normalizing the differences:
-#        # feature_mats[i, :, :] = np.abs(
-#        #    feature_mats[i, :, :]  * model_weights
-#        # )
-#    # 2.) Min-normalize each feature-difference
-#    for j in range(feature_mats.shape[2]):
-#        normed_feature = min_normalize(feature_mats[:, :, j])
-#        for i in range(feature_mats.shape[0]):
-#            feature_mats[i, :, j] = normed_feature[i, :]
-#
-#    # 3.) Sum the linear combos for each particle:
-#    weighted_feature_combos = np.zeros(
-#        (feature_mats.shape[0], feature_mats.shape[1])
-#    )
-#    for i in range(feature_mats.shape[0]):
-#        weighted_feature_combos[i] = np.sum(feature_mats[i, :, :], axis=1)
-#
-#    return weighted_feature_combos

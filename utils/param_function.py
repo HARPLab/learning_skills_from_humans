@@ -1,8 +1,8 @@
+import time
 from itertools import combinations, product
 from typing import Union
 
 import numpy as np
-import time
 
 
 class ParamFunction:
@@ -10,36 +10,58 @@ class ParamFunction:
 
     def __init__(self, basis_functions: list):
         """Compute the params of an option from a query."""
+        self._basis_fns = np.array(basis_functions, copy=True)
+        self._optimize_as = []
         basis_fn_memory_blocks = []
         # 1.) Make a composition of the basis functions:
         for b in basis_functions:
             if b == "object_count":
                 basis_fn_memory_blocks.append(self.get_count)
+                self._optimize_as.append("equal")
             elif b == "centroid":
                 basis_fn_memory_blocks.append(self.get_centroid)
+                self._optimize_as.append("equal")
             elif b == "variance":
                 basis_fn_memory_blocks.append(self.get_variance)
+                self._optimize_as.append("equal")
             elif b == "density":
                 basis_fn_memory_blocks.append(self.density)
+                self._optimize_as.append("equal")
             elif b == "max_dist_from_origin":
                 basis_fn_memory_blocks.append(self.max_dist_from_origin)
+                self._optimize_as.append("max")
             elif b == "average_vector_change":
                 basis_fn_memory_blocks.append(self.average_vector_change)
+                self._optimize_as.append("equal")
             elif b == "avg_magnitude":
                 basis_fn_memory_blocks.append(self.avg_magnitude)
+                self._optimize_as.append("equal")
             elif b == "furthest_neighbor":
                 basis_fn_memory_blocks.append(self.furthest_neighbor)
+                self._optimize_as.append("max")
             elif b == "closest_neighbor":
                 basis_fn_memory_blocks.append(self.closest_neighbor)
+                self._optimize_as.append("min")
             elif b == "coverage":
                 basis_fn_memory_blocks.append(
                     self.approximate_surface_coverage
                 )
+                self._optimize_as.append("equal")
 
-        # 2.) Define the param function as a composition of
-        #     the basis functions:
+        for o in self._optimize_as:
+            assert (
+                o == "equal" or o == "max" or o == "min"
+            ), f"Optimization type {o} is invalid."
+
+        self._optimize_as = np.array(self._optimize_as)
+
+        # 2.) The param function is a composition of the basis functions:
         def param_fn(option: np.ndarray) -> np.ndarray:
-            """Compute the params of a query's option."""
+            """Compute the params of a query's option.
+
+            ::inputs:
+                ::option: An array of class-objects.
+            """
             param_values = np.array([])
             # 3.)  For each basis function in this param function:
             for i, b in enumerate(basis_fn_memory_blocks):
@@ -48,6 +70,16 @@ class ParamFunction:
             return param_values
 
         self.compute_params = param_fn
+
+    @property
+    def basis_fns(self) -> np.ndarray:
+        """Get the basis functions."""
+        return np.array(self._basis_fns, copy=True)
+
+    @property
+    def optimize_as(self) -> np.ndarray:
+        """Get the optimization method types for each basis function."""
+        return np.array(self._optimize_as, copy=True)
 
     def density(self, query_option) -> int:
         """Compute how many objects are within one std. dev. of mean.
@@ -114,8 +146,8 @@ class ParamFunction:
         x_diff = np.abs(toppings[0, :] - centroid[0])
         y_diff = np.abs(toppings[1, :] - centroid[1])
         # 2.) Find the squared-sum of the results:
-        x_diff = np.sum(x_diff ** 2)
-        y_diff = np.sum(y_diff ** 2)
+        x_diff = np.sum(x_diff**2)
+        y_diff = np.sum(y_diff**2)
         # 3.) Normalize:
         norm_term = 1
         if t_count - 1 > 0:
@@ -255,21 +287,20 @@ class ParamFunction:
 
     def approximate_surface_coverage(self, query_option: object) -> float:
         """Compute the approximate surface-area coverage."""
-        # 1.) Get option's object-positions:
         positions = query_option.toppings
-        # 2.) Get the pertinent query attributes:
+        # Get the pertinent query attributes:
         c = query_option.crust_thickness
         t_s = query_option.topping_size
         d = query_option.diameter
-        # 3.) Compute pertinent geometric params:
+        # Compute pertinent geometric params:
         area_per_topping = np.pi * (t_s / 2.0) ** 2
         viable_surface_radius = (d / 2.0) - (c + (t_s / 2.0))
-        # 4.) Get the magnitudes of each object from the surface origin:
+        # Get the magnitudes of each object from the surface origin:
         sq_sum = np.sqrt(positions[0, :] ** 2 + positions[1, :] ** 2)
-        # 5.) Get the indices of magnitudes <= viable surface radius:
+        # Get the indices of magnitudes <= viable surface radius:
         inds = np.argwhere(sq_sum <= viable_surface_radius)
 
-        # 6.) Find toppings which overlap one another:
+        # Find toppings which overlap one another:
         xy_tuples = np.array(list(zip(positions[0, inds], positions[1, inds])))
 
         xy_combs = list(combinations(xy_tuples, 2))
@@ -281,18 +312,18 @@ class ParamFunction:
         )
         # Avoid division-by-zero errors:
         topping_dists = np.where(topping_dists == 0, 0.0001, topping_dists)
-        # 7.) Heuristically compute total overlap area:
+        # Heuristically compute total overlap area:
         overlapping_area = np.where(
             topping_dists < t_s, area_per_topping * np.exp(-topping_dists), 0
         )
         overlapping_area = np.sum(overlapping_area)
 
-        # 5.) Compute the approximation:
+        # Compute the approximation:
         approx_absolute_coverage = (
             area_per_topping * inds.shape[0] - overlapping_area
         )
-        coverage = (
-            approx_absolute_coverage / (np.pi * viable_surface_radius) ** 2
+        coverage = approx_absolute_coverage / (
+            np.pi * (viable_surface_radius**2)
         )
         return coverage
 
